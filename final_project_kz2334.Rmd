@@ -15,6 +15,8 @@ cancer_data = read_csv("./data/Cancer_Registry.csv")
 
 #check missing data
 cancer_data %>% 
-  summarise_all(funs(sum(is.na(.)))) %>% View
+  summarise_all(funs(sum(is.na(.)))) %>% 
+  gather(term, na_num, avgAnnCount:BirthRate) %>% 
+  filter(na_num > 0)
 ```
 
