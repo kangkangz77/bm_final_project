@@ -2,7 +2,7 @@
 title: "final_project"
 author: "Kangkang Zhang"
 date: "12/7/2018"
-output: html_document
+output: github_document
 ---
 
 ```{r}
@@ -17,6 +17,118 @@ cancer_data = read_csv("./data/Cancer_Registry.csv")
 cancer_data %>% 
   summarise_all(funs(sum(is.na(.)))) %>% 
   gather(term, na_num, avgAnnCount:BirthRate) %>% 
-  filter(na_num > 0)
+  filter(na_num > 0) %>% 
+  mutate(percent = na_num/sum(na_num))
 ```
 
+```{r}
+cancer_data = cancer_data %>% 
+  janitor::clean_names() %>% 
+  select(target_death_rate, everything())
+```
+
+extract names of numeric variable
+
+```{r}
+vars = names(cancer_data)[-9] %>% 
+          .[-12]
+
+
+#keep(is.numeric) 
+```
+
+summary statistics for each numeric variable
+
+```{r}
+cancer_data %>%
+  select(vars) %>% 
+  summary() %>% 
+  broom::tidy() %>%
+  select(- Var1) %>% 
+  separate(n, c("stat", "value"), sep = ":") %>% 
+  spread(key = Var2, value = value)
+```
+
+check normality of each variable
+
+```{r}
+#variable 1:9
+cancer_data %>%
+  select(vars[1:9]) %>% 
+  gather() %>%   
+  ggplot(aes(value)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_density(na.rm = TRUE) 
+```
+
+```{r}
+#variable 10:18
+cancer_data %>%
+  select(vars[10:18]) %>% 
+  gather() %>%   
+  ggplot(aes(value)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_density(na.rm = TRUE) 
+```
+
+```{r}
+#variable 19:27
+cancer_data %>%
+  select(vars[19:27]) %>% 
+  gather() %>%   
+  ggplot(aes(value)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_density(na.rm = TRUE) 
+```
+
+```{r}
+#variable 28:32
+cancer_data %>%
+  select(vars[28:32]) %>% 
+  gather() %>%   
+  ggplot(aes(value)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_density(na.rm = TRUE) 
+```
+
+check linear relationship
+
+```{r}
+#variable 2:10
+cancer_data %>%
+  select(vars[1:10]) %>% 
+  gather(key = key, value, vars[2:10]) %>%   
+  ggplot(aes(x = value, y = target_death_rate)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_point(na.rm = TRUE) 
+```
+
+```{r}
+#variable 11:19
+cancer_data %>%
+  select(target_death_rate, vars[11:19]) %>% 
+  gather(key = key, value, vars[11:19]) %>%   
+  ggplot(aes(x = value, y = target_death_rate)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_point(na.rm = TRUE) 
+```
+
+```{r}
+#variable 20:28
+cancer_data %>%
+  select(target_death_rate, vars[20:28]) %>% 
+  gather(key = key, value, vars[20:28]) %>%   
+  ggplot(aes(x = value, y = target_death_rate)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_point(na.rm = TRUE) 
+```
+
+```{r}
+#variable 29:32
+cancer_data %>%
+  select(target_death_rate, vars[29:32]) %>% 
+  gather(key = key, value, vars[29:32]) %>%   
+  ggplot(aes(x = value, y = target_death_rate)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_point(na.rm = TRUE) 
+```
