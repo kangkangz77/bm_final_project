@@ -5,36 +5,43 @@ date: "12/7/2018"
 output: github_document
 ---
 
-```{r}
+```{r, message = FALSE}
 library(tidyverse)
 ```
 
+Import data and check missing values.
 
-```{r}
-cancer_data = read_csv("./data/Cancer_Registry.csv")
+```{r, message = FALSE}
+cancer_data_raw = read_csv("./data/Cancer_Registry.csv")
 
 #check missing data
-cancer_data %>% 
+cancer_data_raw %>%
+    janitor::clean_names() %>% 
   summarise_all(funs(sum(is.na(.)))) %>% 
-  gather(term, na_num, avgAnnCount:BirthRate) %>% 
+  gather(term, na_num, avg_ann_count:birth_rate) %>% 
   filter(na_num > 0) %>% 
   mutate(percent = na_num/sum(na_num))
 ```
 
+Exclude variable PctSomeCol18_24 since its missing rate is 75%. Fill in missing values in pct_employed16_over and pct_private_coverage_alone using mean values of all none-NA obs.
+
 ```{r}
-cancer_data = cancer_data %>% 
-  janitor::clean_names() %>% 
-  select(target_death_rate, everything())
+cancer_data = cancer_data_raw %>% 
+  janitor::clean_names() %>%
+  select(target_death_rate, everything(), - pct_some_col18_24) %>%
+  mutate(pct_employed16_over = ifelse(is.na(pct_employed16_over), 
+                                      mean(pct_employed16_over, na.rm = TRUE), pct_employed16_over),
+         pct_private_coverage_alone = ifelse(is.na(pct_private_coverage_alone), 
+                                      mean(pct_private_coverage_alone, na.rm = TRUE), pct_private_coverage_alone))
+
 ```
 
 extract names of numeric variable
 
 ```{r}
-vars = names(cancer_data)[-9] %>% 
-          .[-12]
-
-
-#keep(is.numeric) 
+vars = cancer_data %>% 
+  keep(is.numeric) %>% 
+  names()
 ```
 
 summary statistics for each numeric variable
@@ -46,7 +53,8 @@ cancer_data %>%
   broom::tidy() %>%
   select(- Var1) %>% 
   separate(n, c("stat", "value"), sep = ":") %>% 
-  spread(key = Var2, value = value)
+  spread(key = Var2, value = value) %>% 
+  knitr::kable()
 ```
 
 check normality of each variable
@@ -82,9 +90,9 @@ cancer_data %>%
 ```
 
 ```{r}
-#variable 28:32
+#variable 28:31
 cancer_data %>%
-  select(vars[28:32]) %>% 
+  select(vars[28:31]) %>% 
   gather() %>%   
   ggplot(aes(value)) +                    
     facet_wrap(~ key, scales = "free") +  
@@ -100,8 +108,33 @@ cancer_data %>%
   gather(key = key, value, vars[2:10]) %>%   
   ggplot(aes(x = value, y = target_death_rate)) +                    
     facet_wrap(~ key, scales = "free") +  
-    geom_point(na.rm = TRUE) 
+    geom_point(na.rm = TRUE) +
+    geom_smooth(se = FALSE, method = "lm") 
 ```
+
+variable median_age has some abnormal value, 30 obs are large than 150. Exclude those obs?
+
+```{r}
+cancer_data %>%
+  select(median_age) %>% 
+  filter(median_age > 150)  #result is the same as larger than 100
+
+cancer_data_df = cancer_data %>%
+  filter(median_age <= 150)
+  
+```
+
+check the linear relationship between median_age and responce.
+
+```{r}
+cancer_data %>%
+  select(target_death_rate, median_age) %>%
+  filter(median_age <= 150) %>% 
+  ggplot(aes(x = median_age, y = target_death_rate)) +                    
+  geom_point(na.rm = TRUE) +
+  geom_smooth(se = FALSE, method = "lm") 
+```
+
 
 ```{r}
 #variable 11:19
@@ -110,7 +143,8 @@ cancer_data %>%
   gather(key = key, value, vars[11:19]) %>%   
   ggplot(aes(x = value, y = target_death_rate)) +                    
     facet_wrap(~ key, scales = "free") +  
-    geom_point(na.rm = TRUE) 
+    geom_point(na.rm = TRUE) +
+  geom_smooth(se = FALSE, method = "lm") 
 ```
 
 ```{r}
@@ -120,15 +154,37 @@ cancer_data %>%
   gather(key = key, value, vars[20:28]) %>%   
   ggplot(aes(x = value, y = target_death_rate)) +                    
     facet_wrap(~ key, scales = "free") +  
-    geom_point(na.rm = TRUE) 
+    geom_point(na.rm = TRUE) +
+  geom_smooth(se = FALSE, method = "lm") 
 ```
 
 ```{r}
-#variable 29:32
+#variable 29:31
 cancer_data %>%
-  select(target_death_rate, vars[29:32]) %>% 
-  gather(key = key, value, vars[29:32]) %>%   
+  select(target_death_rate, vars[29:31]) %>% 
+  gather(key = key, value, vars[29:31]) %>%   
   ggplot(aes(x = value, y = target_death_rate)) +                    
     facet_wrap(~ key, scales = "free") +  
-    geom_point(na.rm = TRUE) 
+    geom_point(na.rm = TRUE) +
+  geom_smooth(se = FALSE, method = "lm") 
 ```
+
+check correlation
+
+```{r}
+cancer_data_df %>%
+  keep(is.numeric) %>% 
+  cor() %>% 
+  knitr::kable()
+
+#Descending order according to correlocation with target variable
+cancer_data_df %>%
+  keep(is.numeric) %>% 
+  cor() %>% 
+  as_tibble() %>% 
+  mutate(term = vars) %>% 
+  select(term, target_death_rate) %>% 
+  arrange(desc(target_death_rate)) %>% 
+  knitr::kable()
+```
+
