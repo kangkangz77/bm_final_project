@@ -182,9 +182,4 @@ cancer_data_df %>%
   keep(is.numeric) %>% 
   cor() %>% 
   as_tibble() %>% 
-  mutate(term = vars) %>% 
-  select(term, target_death_rate) %>% 
-  arrange(desc(target_death_rate)) %>% 
-  knitr::kable()
-```
 
