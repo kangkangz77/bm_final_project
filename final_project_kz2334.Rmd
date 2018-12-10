@@ -182,4 +182,25 @@ cancer_data_df %>%
   keep(is.numeric) %>% 
   cor() %>% 
   as_tibble() %>% 
+  knitr::kable()
+
+```
+
+```{r}
+library(mice)
+
+imp <- mice(cancer_data_raw, seed = 1234)
+
+summary(imp)
+
+imp$imp$PctSomeCol18_24
+
+complete(imp, action = 2)
+```
+
+```{r}
+fit <- with(imp, lm)
+pooled <- pool(fit)
+summary(pooled)
+```
 
