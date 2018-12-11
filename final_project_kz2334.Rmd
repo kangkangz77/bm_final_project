@@ -186,21 +186,176 @@ cancer_data_df %>%
 
 ```
 
-```{r}
-library(mice)
-
-imp <- mice(cancer_data_raw, seed = 1234)
-
-summary(imp)
-
-imp$imp$PctSomeCol18_24
-
-complete(imp, action = 2)
-```
+exclude variable pct_private_coverage_alone
 
 ```{r}
-fit <- with(imp, lm)
-pooled <- pool(fit)
-summary(pooled)
+cancer_data_df = cancer_data_df %>%
+  keep(is.numeric) %>% 
+  dplyr::select(-pct_private_coverage_alone)
 ```
+
+
+Use lasso to select varibles in all variables
+
+```{r}
+library('faraway')
+library('MASS')                           # for lm.ridge()
+library('glmnet')                         # for glmnet()
+library('reshape2')
+
+cancer_data_df1<- data.frame(cancer_data_df)
+
+# Start with the full model
+mult.fit <- lm(target_death_rate ~ ., data=cancer_data_df1)
+summary(mult.fit)
+
+Y <- cancer_data_df1[,1]
+
+X <- as.matrix(cancer_data_df1[,-1])
+
+set.seed(1)
+
+#split dataset into train and test 8:2
+train<-sample(1:nrow(X),nrow(X)*0.8)
+
+test<-(-train)
+
+Y.test<-Y[test]
+
+#Lasso regression
+grid <- 10^seq(5,-2, length=100)
+lasso1<- glmnet(X,Y, alpha =1, lambda =grid)
+
+# Cross-validation
+cv.out<-cv.glmnet(X[train,],Y[train])
+plot(cv.out)
+
+best.lambda<-cv.out$lambda.1se
+
+#lasso.pred=predict(lasso1,s=best.lambda,newx=X[test,])
+#mean((lasso.pred-Y.test)^2)
+
+# Fit a Lasso model with all observations with the best lambda
+lasso2<- glmnet(X, Y, alpha =1, lambda=best.lambda)
+coef(lasso2)
+coef(mult.fit)
+
+# Fraction of deviance explained
+# Similar interpretation to R-squared: % variance explained by non-zero variables variables
+lasso2$dev.ratio
+
+# Compare LS, Ridge and Lasso regression coefficients
+res_ls_ridge_lasso<- cbind(coef(mult.fit),coef(lasso2))
+colnames(res_ls_ridge_lasso) <- c("LS", "Lasso")
+res_ls_ridge_lasso
+
+# Using the entire data, fit Lasso regressions using the lambda grid.
+lasso3 <- glmnet(X,Y, alpha=1, lambda=grid)
+
+# Save the estimated 'standardized' coefficients for all 7 predictors without the intercept that is not of interest.
+coef_lasso3 <- coef(lasso3)[-1,]
+# Transpose the matrix
+coef_lasso3_mat <- t(as.matrix(coef_lasso3))
+# Rename and sort the matrix by asceding  grid
+rownames(coef_lasso3_mat) <- grid
+coef_lasso3_mat_sort <- coef_lasso3_mat[order(grid),]
+
+# Plot using different colors
+matplot(coef_lasso3_mat_sort,type="l",lty=1,xlim=c(0,50),
+        xlab="lambda",ylab="coefficient",col=1:7) 
+### add legend
+legend('bottomright', inset=.05, legend=colnames(coef_lasso3_mat_sort), 
+       pch=20, cex=0.8, col=1:7)
+```
+
+
+
+Variable selection after stepwise and AIC
+
+```{r}
+cancer_data_df2 = cancer_data_raw %>% 
+  dplyr::select(TARGET_deathRate,incidenceRate,medIncome, MedianAgeFemale,
+    PctNoHS18_24, PctHS18_24, PctHS25_Over, PctBachDeg25_Over,
+    PctUnemployed16_Over, PctPrivateCoverage, PctEmpPrivCoverage, 
+    PctWhite, PctOtherRace) %>%
+  janitor::clean_names() %>% 
+  data.frame()
+
+mult.fit <- lm(target_death_rate ~ ., data=cancer_data_df2)
+summary(mult.fit)
+
+Y <- cancer_data_df2[,1]
+
+X <- as.matrix(cancer_data_df2[,-1])
+
+set.seed(1)
+
+train<-sample(1:nrow(X),nrow(X*0.8))
+
+test<-(-train)
+
+Y.test<-Y[test]
+
+
+lasso1<- glmnet(X[train ,],Y[train], alpha =1, lambda =grid)
+
+
+# Cross-validation
+cv.out<-cv.glmnet(X[train,],Y[train])
+plot(cv.out)
+
+best.lambda<-cv.out$lambda.1se
+
+#lasso.pred=predict(lasso1,s=best.lambda,newx=X[test,])
+#mean((lasso.pred-Y.test)^2)
+
+# Fit a Lasso model with all observations with the best lambda
+lasso2<- glmnet(X, Y, alpha =1, lambda=best.lambda)
+coef(lasso2)
+coef(mult.fit)
+
+# Fraction of deviance explained
+# Similar interpretation to R-squared: % variance explained by non-zero variables variables
+lasso2$dev.ratio
+
+# Compare LS, Ridge and Lasso regression coefficients
+res_ls_ridge_lasso<- cbind(coef(mult.fit),coef(lasso2))
+colnames(res_ls_ridge_lasso) <- c("LS", "Lasso")
+res_ls_ridge_lasso
+
+
+lasso3 <- glmnet(X,Y, alpha=1, lambda=grid)
+
+# Save the estimated 'standardized' coefficients for all 7 predictors without the intercept that is not of interest.
+coef_lasso3 <- coef(lasso3)[-1,]
+# Transpose the matrix
+coef_lasso3_mat <- t(as.matrix(coef_lasso3))
+# Rename and sort the matrix by asceding  grid
+rownames(coef_lasso3_mat) <- grid
+coef_lasso3_mat_sort <- coef_lasso3_mat[order(grid),]
+
+# Plot using different colors
+matplot(coef_lasso3_mat_sort,type="l",lty=1,xlim=c(0,50),
+        xlab="lambda",ylab="coefficient",col=1:7) 
+### add legend
+legend('bottomright', inset=.05, legend=colnames(coef_lasso3_mat_sort), 
+       pch=20, cex=0.8, col=1:7)
+
+```
+
+The lm model is :
+```{r}
+cancer_data_df %>% 
+  dplyr::select(target_death_rate, incidence_rate,med_income, pct_hs18_24, pct_hs25_over,
+                pct_bach_deg25_over,
+                pct_unemployed16_over, pct_private_coverage, pct_white, pct_other_race) %>% 
+lm(target_death_rate~., data = .) %>% 
+  summary()
+```
+
+
+
+
+
+
 
