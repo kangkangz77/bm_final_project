@@ -1,0 +1,306 @@
+---
+title: "Model_building"
+author: "Kangkang Zhang"
+date: "12/15/2018"
+output: html_document
+---
+
+```{r, message = FALSE}
+library(tidyverse)
+library(caret)
+library(MASS)
+library(HH)
+```
+
+Import data and check missing values.
+
+```{r, message = FALSE}
+cancer_data_raw = read_csv("./data/Cancer_Registry.csv")
+
+#check missing data
+cancer_data_raw %>%
+    janitor::clean_names() %>% 
+  summarise_all(funs(sum(is.na(.)))) %>% 
+  gather(term, na_num, avg_ann_count:birth_rate) %>% 
+  filter(na_num > 0) %>% 
+  mutate(percent = na_num/sum(na_num))
+```
+
+Exclude variable PctSomeCol18_24 since its missing rate is 75%. Fill in missing values in pct_employed16_over and pct_private_coverage_alone using mean values of all none-NA obs.
+
+```{r}
+cancer_data = cancer_data_raw %>% 
+  janitor::clean_names() %>%
+  dplyr::select(target_death_rate, everything(), - pct_some_col18_24) %>%
+  mutate(pct_employed16_over = ifelse(is.na(pct_employed16_over), 
+                                      mean(pct_employed16_over, na.rm = TRUE), pct_employed16_over),
+         pct_private_coverage_alone = ifelse(is.na(pct_private_coverage_alone), 
+                                      mean(pct_private_coverage_alone, na.rm = TRUE), pct_private_coverage_alone))
+
+```
+
+selected 11 predictors(exclude income and 3 education related vars)
+
+```{r}
+cancer_data_df= cancer_data %>% 
+  dplyr::select(target_death_rate, incidence_rate, study_per_cap, poverty_percent,
+         median_age_female, pct_bach_deg25_over, pct_unemployed16_over, pct_emp_priv_coverage, pct_public_coverage, pct_white, pct_black,
+         pct_asian)
+
+#Fit a regression using all predictors
+mult.fit <- lm(target_death_rate ~ ., data = cancer_data_df)
+summary(mult.fit)
+```
+
+#backward 
+
+```{r}
+# No pct_white
+step1<-update(mult.fit, . ~ . -pct_white)
+summary(step1)
+
+# No study_per_cap
+step2<-update(step1, . ~ . -study_per_cap)
+summary(step2)
+
+# No pct_asian
+step3<-update(step2, . ~ . -pct_asian)
+summary(step3)
+
+# No median_age_female
+step4<-update(step3, . ~ . -median_age_female)
+summary(step4)
+
+#all predictors have p-value less than 0.05, procedure stops
+
+reg1 = lm( target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_black, data = cancer_data_df)
+
+summary(reg1)
+
+vif(reg1)
+```
+
+Call:
+lm( target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_black, data = cancer_data_df)
+
+#criterion-based procedures 
+
+AIC stepwise
+```{r}
+mult.fit <- lm(target_death_rate ~ ., data = cancer_data_df)
+step(mult.fit, direction = 'both')
+
+#the model is
+reg2 = lm(target_death_rate ~ incidence_rate + poverty_percent + pct_bach_deg25_over + 
+    pct_unemployed16_over + pct_emp_priv_coverage + pct_public_coverage + 
+    pct_black, data = cancer_data_df)
+
+summary(reg2)
+vif(reg2)
+
+#reg 2 is the same as reg2
+```
+
+##Cp based
+
+```{r}
+# Leaps function provides all-subsets analysis
+cancer_data_df1 = cancer_data_df %>% 
+  as.data.frame()
+
+# Printing the 2 best models of each size, using the Cp criterion:
+leaps(x = cancer_data_df1[,2:12], y = cancer_data_df1[,1], nbest=2, method="Cp")
+
+
+# Printing the 2 best models of each size, using the adjusted R^2 criterion:
+leaps(x = cancer_data_df1[,2:12], y = cancer_data_df1[,1], nbest=2, method="adjr2")
+
+# Summary of models for each size (one model per size)
+b<-regsubsets(target_death_rate ~ ., data = cancer_data_df1)
+(rs<-summary(b))
+
+# Plots of Cp and Adj-R2 as functions of parameters
+par(mar=c(4,4,1,1))
+par(mfrow=c(1,2))
+
+plot(2:9, rs$cp, xlab="No. of parameters", ylab="Cp Statistic")
+abline(0,1)
+
+plot(2:9, rs$adjr2, xlab="No of parameters", ylab="Adj R2")
+
+rs$cp
+rs$adjr2
+
+#the model is
+
+reg3 = lm(target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage, data = cancer_data_df)
+
+summary(reg3)
+vif(reg3)
+
+#nested model, use partial F-test
+anova(reg3, reg1)
+
+```
+
+p-value < 0.05, we reject the null and conclude that model 2(reg1) is superior.
+
+##AIC
+
+```{r}
+#AIC 
+AIC(reg1)
+AIC(reg3)
+#BIC
+#AIC(reg1, k = log(length(cancer_data_df$target_death_rate)))
+#AIC(reg3, k = log(length(cancer_data_df$target_death_rate)))
+
+summary(reg1)
+vif(reg1)
+```
+
+reg 1 has the smaller AIC, recommending that reg 1 is better. BUT, the parameter of coverage is positive(weird)
+
+#model diagnosis
+
+
+
+```{r}
+#box-cox
+boxcox(reg1)
+
+# rstandard function gives the INTERNALLY studentized residuals 
+stu_res<-rstandard(reg1)
+outliers_y<-stu_res[abs(stu_res)>2.5]
+outliers_y
+
+# Measures of influence:
+# Gives DFFITS, Cook's Distance, Hat diagonal elements, and others.
+
+influence.measures(reg1)
+
+# Look at the Cook's distance lines and notice obs 1221, 1366, 282 as potential Y outliesrs / influential points
+
+par(mfrow=c(2,2))
+plot(reg1)
+
+
+summary(reg1)
+
+
+# Remove obs 1221, 1366, 282
+cancer_df_remove<-cancer_data_df[c(-1221, -1366, -282),]
+
+reg1_remove<- lm(target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage + 
+    pct_public_coverage + pct_black, data = cancer_df_remove) 
+
+summary(reg1_remove) 
+#plot(cancer_data_df$pct_emp_priv_coverage,reg1$residuals)
+
+#two variable pct_black become insignificant. Model1 becomes model 3(5 predictors). We consider the three points are influential points
+
+influence.measures(reg1_remove)
+
+par(mfrow=c(2,2))
+plot(reg1_remove)
+
+#thus, we see if the model3 is robust with or without the three points
+plot(reg3)
+
+reg3_remove<- lm(target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage
+    , data = cancer_df_remove) 
+
+plot(reg3)
+
+summary(reg3_remove)
+vif(reg3_remove)
+
+plot(reg3_remove)
+summary(reg3)
+
+```
+
+We can see that the parameter estimates are almost the same with or without the three points. In this case, they are not influential points in model3. We decide to keep them in model 3.
+
+#cv
+
+Use a 10-fold cross-validation.
+
+```{r}
+set.seed(1)
+
+# Use 10-fold validation and create the training sets
+data_train<-trainControl(method = "cv", number = 10)
+
+# Fit the 4-variables model
+model_caret<-train(target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage, 
+    data = cancer_df_remove,
+                   trControl=data_train,
+                   method='lm',
+                   na.action=na.pass)
+
+model_caret
+
+# Model coefficients
+model_caret$finalModel
+
+# Let's look at the model using all data, no CV
+summary(reg3) %>% 
+  broom::glance() %>% 
+      dplyr::select(sigma)
+```
+
+10-fold cv RMSE is 19.86729, while the MSE in full model is 20.2.
+
+#bootstrap
+
+```{r}
+pred = reg3$fitted.values
+resid = reg3$residuals
+
+#write a function for residual sampling
+boots_trap = function(len) {
+  mse <- tibble()
+  for (i in 1:len){
+    sample_resid = sample(resid, 3047, replace = TRUE)
+    t = cancer_data_df %>% 
+      cbind(pred, sample_resid) %>% 
+      mutate(new_target_death_rate = sample_resid + pred) %>% 
+      lm(new_target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_emp_priv_coverage, data = .) %>% 
+      broom::glance() %>% 
+      dplyr::select(sigma)
+  
+    mse = mse %>% 
+      rbind(t)
+  }
+  #return mse for each bootstrapping
+  mse
+}
+
+#repeat for 10 times
+boots_10 = boots_trap(10)
+
+#summarise MSEs for 10 times - repeating
+boots_10 %>%
+  mutate(sigma) %>% 
+  summary()
+
+#repeat for 1000 times
+boots_1000 = boots_trap(1000)
+
+#summarise MSEs for 1000 times - repeating
+boots_1000 %>%
+  mutate(sigma) %>% 
+  summary() 
+```
+
+bootstrapping for 1000 times, we get a mean value of 1000 MSEs, 20.19, very close to MSE of full model. We can conclude that the model prediction is robust.

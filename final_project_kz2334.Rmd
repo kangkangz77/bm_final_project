@@ -365,23 +365,29 @@ cancer_data_dff = cancer_data_df %>%
 ```
 
 
-selected 11 predictors(excldue income and 3 education related vars)
+selected 11 predictors(exclude income and 3 education related vars)
 ```{r}
-cancer_data_dff1 = cancer_data_df %>% 
+cancer_data_1df = cancer_data %>% 
   dplyr::select(target_death_rate, incidence_rate, study_per_cap, poverty_percent,
          median_age, pct_bach_deg25_over, pct_unemployed16_over, pct_emp_priv_coverage, pct_public_coverage, pct_white, pct_black,
          pct_asian)
 
+mult.fit <- lm(target_death_rate ~ ., data = cancer_data_1df)
+step(mult.fit, direction = 'both')
+
+
 # Leaps function provides all-subsets analysis
 cancer_data_dfff1 = cancer_data_dff1 %>% 
+  dplyr::select(target_death_rate, incidence_rate, poverty_percent,
+         pct_bach_deg25_over, pct_unemployed16_over, pct_emp_priv_coverage, pct_public_coverage, pct_white) %>% 
   as.data.frame()
 
 # Printing the 2 best models of each size, using the Cp criterion:
-leaps(x = cancer_data_dfff1[,2:11], y = cancer_data_dfff1[,1], nbest=2, method="Cp")
+leaps(x = cancer_data_dfff1[,2:8], y = cancer_data_dfff1[,1], nbest=2, method="Cp")
 
 
 # Printing the 2 best models of each size, using the adjusted R^2 criterion:
-leaps(x = cancer_data_dfff1[,2:12], y = cancer_data_dfff1[,1], nbest=2, method="adjr2")
+leaps(x = cancer_data_dfff1[,2:8], y = cancer_data_dfff1[,1], nbest=2, method="adjr2")
 
 # Summary of models for each size (one model per size)
 b<-regsubsets(target_death_rate ~ ., data = cancer_data_dfff1)
@@ -391,10 +397,76 @@ b<-regsubsets(target_death_rate ~ ., data = cancer_data_dfff1)
 par(mar=c(4,4,1,1))
 par(mfrow=c(1,2))
 
-plot(2:9, rs$cp, xlab="No. of parameters", ylab="Cp Statistic")
+plot(2:8, rs$cp, xlab="No. of parameters", ylab="Cp Statistic")
 abline(0,1)
 
-plot(2:9, rs$adjr2, xlab="No of parameters", ylab="Adj R2")
+plot(2:8, rs$adjr2, xlab="No of parameters", ylab="Adj R2")
 ```
 
+
+```{r}
+# rstandard function gives the INTERNALLY studentized residuals 
+mult.fit1 = lm(target_death_rate~incidence_rate+poverty_percent+pct_bach_deg25_over+pct_unemployed16_over+               pct_emp_priv_coverage, data = cancer_data_1df)
+
+
+stu_res<-rstandard(mult.fit1)
+outliers_y<-stu_res[abs(stu_res)>2.5]
+
+# Measures of influence:
+# Gives DFFITS, Cook's Distance, Hat diagonal elements, and others.
+
+influence.measures(mult.fit1)
+
+# Look at the Cook's distance lines and notice obs 5 and 28 as potential Y outliesrs / influential points
+
+par(mfrow=c(2,2))
+plot(mult.fit1)
+
+# Examine results with and without observations 5 and 28 that have very high survivals (>2000)
+summary(mult.fit1)
+
+
+# Remove observations 5 and 28
+cancer_df_remove<-cancer_data_1df[c(-1221,-1366, -282),]
+
+mult.fit_remove<- lm(target_death_rate~incidence_rate+poverty_percent+pct_bach_deg25_over+pct_unemployed16_over+               pct_emp_priv_coverage, data = cancer_df_remove) 
+
+summary(mult.fit_remove)
+
+influence.measures(mult.fit_remove)
+
+par(mfrow=c(2,2))
+plot(mult.fit_remove)
+```
+
+```{r}
+cancer_data_1df %>% 
+  mutate(log_poverty = sqrt(poverty_percent)) %>% 
+  ggplot(aes(x = log_poverty))+
+  geom_density()
+```
+
+```{r}
+library(MASS)
+fit1 <- lm(Survival ~ Bloodclot, data=data_surg)
+boxcox(fit1)  # default grid of lambdas is -2 to 2 by 0.1
+
+# Could change grid of lambda values
+boxcox(fit1, lambda = seq(-3, 3, by=0.25) ) 
+
+
+# Box Cox for multiple regression
+mult.fit1 <- lm(Survival ~ Bloodclot + Progindex + Enzyme + Liver + Age + Gender + Alcmod + Alcheav, data=data_surg) 
+summary(mult.fit1)
+
+boxcox(mult.fit1) 
+plot(mult.fit1)
+
+
+mult.fit2 <- lm(Lnsurvival ~ Bloodclot + Progindex + Enzyme + Liver + Age + Gender + Alcmod + Alcheav, data=data_surg) 
+summary(mult.fit2)
+boxcox(mult.fit2) 
+plot(mult.fit2)
+
+```
 
