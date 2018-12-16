@@ -102,7 +102,7 @@ reg2 = lm(target_death_rate ~ incidence_rate + poverty_percent + pct_bach_deg25_
 summary(reg2)
 vif(reg2)
 
-#reg 2 is the same as reg2
+#reg2 is the same as reg1
 ```
 
 ##Cp based
