@@ -1,20 +1,15 @@
 ---
-title: "new Model_building"
-author: "Kangkang Zhang"
-date: "12/15/2018"
+title: "Final Project R code"
 output: html_document
 ---
 
 ```{r, message = FALSE}
 library(tidyverse)
-library(caret)
-library(MASS)
 library(HH)
 library(leaps)
 library(boot)
 library(broom)
 library(ggpubr)
-library(viridis)
 library(reshape2)
 ```
 
@@ -281,9 +276,7 @@ cv.err<-cv.glm(cancer_data_df,glm.fit)
 cv.err$delta  
 
 anova(final_model) %>% 
-  broom::tidy()
-
-summary(final_model)
+  tidy()
 ```
 
 ###Bootstrapping - residual sample
@@ -303,7 +296,7 @@ boots_trap = function(len) {
       lm(new_target_death_rate ~ incidence_rate + poverty_percent + 
     pct_bach_deg25_over + pct_unemployed16_over + pct_white + 
     pct_other_race, data = .) %>% 
-      broom::glance() %>% 
+      glance() %>% 
       dplyr::select(sigma)
   
     rmse = rmse %>% 
