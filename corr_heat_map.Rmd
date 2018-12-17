@@ -1,0 +1,38 @@
+---
+title: "Untitled"
+author: "Yizhi Ma"
+date: "12/10/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggpubr)
+library(viridis)
+library(reshape2)
+```
+
+```{r}
+data_pct = 
+  cancer_data %>% 
+  select(incidence_rate, median_age_female, poverty_percent, pct_unemployed16_over, pct_bach_deg25_over, pct_emp_priv_coverage, pct_public_coverage, pct_white, pct_asian, pct_black, pct_other_race)
+
+cormat = round(cor(data_pct), 2)
+melted_cormat = melt(cormat)
+
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "steelblue", high = "lightcoral", mid = "white", 
+  midpoint = 0, limit = c(-1,1), space = "Lab", 
+  name="Pearson\nCorrelation") +
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 20, vjust = 1, 
+    size = 8, hjust = 1)) +
+  labs(
+    x = "",
+    y = "")
+```
+
+
+
+
