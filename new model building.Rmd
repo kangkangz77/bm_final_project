@@ -1,0 +1,326 @@
+---
+title: "new Model_building"
+author: "Kangkang Zhang"
+date: "12/15/2018"
+output: html_document
+---
+
+```{r, message = FALSE}
+library(tidyverse)
+library(caret)
+library(MASS)
+library(HH)
+library(leaps)
+library(boot)
+library(broom)
+library(ggpubr)
+library(viridis)
+library(reshape2)
+```
+
+#Import and Tidy data
+
+Import data and check missing values.
+
+```{r, message = FALSE}
+cancer_data_raw = read_csv("./data/Cancer_Registry.csv")
+
+#check missing data
+cancer_data_raw %>%
+    janitor::clean_names() %>% 
+  summarise_all(funs(sum(is.na(.)))) %>% 
+  gather(term, na_num, avg_ann_count:birth_rate) %>% 
+  filter(na_num > 0) %>% 
+  mutate(percent = na_num/sum(na_num))
+```
+
+Exclude variable PctSomeCol18_24 since its missing rate is 75%. Fill in missing values in pct_employed16_over and pct_private_coverage_alone using mean values of all none-NA obs.
+
+```{r}
+cancer_data = cancer_data_raw %>% 
+  janitor::clean_names() %>%
+  dplyr::select(target_death_rate, everything(), - pct_some_col18_24) %>%
+  mutate(pct_employed16_over = ifelse(is.na(pct_employed16_over), 
+                                      mean(pct_employed16_over, na.rm = TRUE), pct_employed16_over),
+         pct_private_coverage_alone = ifelse(is.na(pct_private_coverage_alone), 
+                                      mean(pct_private_coverage_alone, na.rm = TRUE), pct_private_coverage_alone))
+
+```
+
+Select 11 predictors of interest(with no missing data).
+
+```{r}
+cancer_data_df= cancer_data %>% 
+  dplyr::select(target_death_rate, incidence_rate, poverty_percent,
+         median_age_female, pct_bach_deg25_over, pct_unemployed16_over, pct_emp_priv_coverage, pct_public_coverage, pct_white, pct_black,
+         pct_asian, pct_other_race)
+
+#Fit a regression using all predictors
+mult.fit <- lm(target_death_rate ~ ., data = cancer_data_df)
+summary(mult.fit)
+```
+
+#Descriptive statistics
+
+```{r}
+#density plot of target
+cancer_data_df %>%
+  dplyr::select(target_death_rate) %>% 
+  ggplot(aes(x = target_death_rate)) +                    
+    geom_density(na.rm = TRUE) +
+  theme_bw()
+
+#boxplot of predictors
+cancer_data_df %>%
+  dplyr::select(-target_death_rate) %>%  
+  gather() %>%   
+  ggplot(aes(x = value, y = value)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_boxplot(na.rm = TRUE) +
+    theme_bw()
+```
+
+```{r}
+#descriptive statistics
+descriptive = function(variable = as.character(), data = cancer_data_df){
+    df = summary(data[[variable]]) %>% tidy()
+    df$sd = sd(data[[variable]])
+    df[c(4, 7, 1, 2, 3, 5, 6)]
+}
+
+a = tibble(
+    variable = names(cancer_data_df),
+    desc = map(variable, ~descriptive(variable = .x))
+) %>% 
+    unnest()
+```
+
+```{r}
+#correlation heat map
+data_pct = cancer_data_df %>%
+  dplyr::select(- target_death_rate)
+
+cormat = round(cor(data_pct), 2)
+melted_cormat = melt(cormat)
+
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "steelblue", high = "lightcoral", mid = "white", 
+  midpoint = 0, limit = c(-1,1), space = "Lab", 
+  name="Pearson\nCorrelation") +
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 20, vjust = 1, 
+    size = 8, hjust = 1)) +
+  labs(
+    x = "",
+    y = "")
+```
+
+#Model Building  
+
+##Variable Selection
+
+###Backward Elimination
+
+```{r}
+# No pct_asian
+step1<-update(mult.fit, . ~ . -pct_asian)
+summary(step1)
+
+# No pct_black
+step2<-update(step1, . ~ . -pct_black)
+summary(step2)
+
+#all predictors have p-value less than 0.05, procedure stops
+reg1 = lm(formula = target_death_rate ~ incidence_rate + poverty_percent + 
+    median_age_female + pct_bach_deg25_over + pct_unemployed16_over + 
+    pct_emp_priv_coverage + pct_public_coverage + pct_white + 
+    pct_other_race, data = cancer_data_df)
+
+summary(reg1)
+vif(reg1) #vif < 10
+```
+
+###AIC based procedures 
+
+```{r}
+mult.fit <- lm(target_death_rate ~ ., data = cancer_data_df)
+step(mult.fit, direction = 'both')
+
+#the model is
+reg2 = lm(formula = target_death_rate ~ incidence_rate + poverty_percent + 
+    median_age_female + pct_bach_deg25_over + pct_unemployed16_over + 
+    pct_emp_priv_coverage + pct_public_coverage + pct_white + 
+    pct_other_race, data = cancer_data_df)
+
+summary(reg2)
+vif(reg2)
+
+#reg2 is the same as reg1
+```
+
+###All-subset Analysis
+
+```{r}
+cancer_data_df1 = cancer_data_df %>% 
+  as.data.frame()
+
+# Summary of models for each size (one model per size)
+b<-regsubsets(target_death_rate ~ ., data = cancer_data_df1, nvmax = 11)
+(rs<-summary(b))
+
+# Plots of Cp and Adj-R2 as functions of parameters
+par(mar=c(4,4,1,1))
+par(mfrow=c(1,2))
+
+plot(2:12, rs$cp, xlab="No. of parameters", ylab="Cp Statistic")
+abline(0,1)
+
+plot(2:12, rs$adjr2, xlab="No. of parameters", ylab="Adj R Square")
+
+rbind(rs$cp, rs$adjr2)
+```
+
+
+```{r}
+#AIC 
+AIC(mult.fit)
+stp1 = update(mult.fit, . ~ . -pct_asian)
+AIC(stp1)
+stp2 = update(stp1, . ~ . -pct_black)
+AIC(stp2)
+stp3 = update(stp2, . ~ . -pct_emp_priv_coverage)
+AIC(stp3)
+stp4 = update(stp3, . ~ . -pct_public_coverage)
+AIC(stp4)
+stp5 = update(stp4, . ~ . -median_age_female)
+AIC(stp5)
+stp6 = update(stp5, . ~ . -pct_white)
+AIC(stp6)
+stp7 = update(stp6, . ~ . -pct_unemployed16_over)
+AIC(stp7)
+stp8 = update(stp7, . ~ . -pct_other_race)
+AIC(stp8)
+stp9 = update(stp8, . ~ . -poverty_percent)
+AIC(stp9)
+stp10 = update(stp9, . ~ . -incidence_rate)
+AIC(stp10)
+
+#BIC
+k = log(length(cancer_data_df$target_death_rate))
+
+AIC(mult.fit, k = k)
+AIC(stp1, k = k)
+AIC(stp2, k = k)
+AIC(stp3, k = k)
+AIC(stp4, k = k)
+AIC(stp5, k = k)
+AIC(stp6, k = k)
+AIC(stp7, k = k)
+AIC(stp8, k = k)
+AIC(stp9, k = k)
+AIC(stp10, k = k)
+
+#the final model is
+final_model = lm(formula = target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_white + 
+    pct_other_race, data = cancer_data_df)
+
+vif(final_model)
+
+confint(final_model, level=0.95)
+
+```
+
+Model with 7 parameters has the smallest BIC, and its Adjusted R-Sq is comparatively larger. We decide to choose it as our final model.
+
+##Model Diagnostics
+
+```{r}
+#box-cox
+boxcox(final_model)
+
+# rstandard function gives the INTERNALLY studentized residuals 
+stu_res<-rstandard(final_model)
+outliers_y<-stu_res[abs(stu_res)>2.5]
+outliers_y
+
+influence.measures(final_model)
+
+par(mfrow=c(2,2))
+plot(final_model)
+
+# Remove obs 1221, 1366, 282
+cancer_df_remove<-cancer_data_df[c(-1221, -1366, -282),]
+
+final_remove<- lm(formula = target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_white + 
+    pct_other_race, data = cancer_df_remove)
+
+#compare model with or without those three points
+summary(final_model)
+summary(final_remove) 
+
+#all variables are still significant, and the parameter estimate is stable. Those three outliers are not influential points.
+plot(final_remove)
+```
+
+We can see that the parameter estimates are almost the same with or without the three points. In this case, they are not influential points in final model. We decide to keep them in final model.
+
+##Model Validation
+
+###LOOCV
+```{r}
+glm.fit<-glm(target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_white + 
+    pct_other_race, data = cancer_data_df)
+
+summary(glm.fit)
+
+cv.err<-cv.glm(cancer_data_df,glm.fit)
+cv.err$delta  
+
+anova(final_model) %>% 
+  broom::tidy()
+
+summary(final_model)
+```
+
+###Bootstrapping - residual sample
+
+```{r}
+pred = final_model$fitted.values
+resid = final_model$residuals
+
+#write a function for residual sampling
+boots_trap = function(len) {
+  rmse <- tibble()
+  for (i in 1:len){
+    sample_resid = sample(resid, 3047, replace = TRUE)
+    t = cancer_data_df %>% 
+      cbind(pred, sample_resid) %>% 
+      mutate(new_target_death_rate = sample_resid + pred) %>% 
+      lm(new_target_death_rate ~ incidence_rate + poverty_percent + 
+    pct_bach_deg25_over + pct_unemployed16_over + pct_white + 
+    pct_other_race, data = .) %>% 
+      broom::glance() %>% 
+      dplyr::select(sigma)
+  
+    rmse = rmse %>% 
+      rbind(t)
+  }
+  rmse
+}
+
+#run bootstrapping for 100, 1000, 10000 times
+boots_100 = boots_trap(100)
+boots_1000 = boots_trap(1000)
+boots_10000 = boots_trap(10000)
+
+boots_100 %>%
+  summary() 
+boots_1000 %>%
+  summary() 
+boots_10000 %>%
+  summary() 
+```
